@@ -8,6 +8,7 @@
 #include <sys/time.h>
 #include "parameter.h"
 #include "stats.h"
+#include "consumer.h"
 
 char *optionHelpInfo[60] = { "show usage", /* ? */
                              "", /* @ */
@@ -109,6 +110,7 @@ int readInt( char msg) {
     return ret;
 }
 
+#if 0
 void *(*consumer_thread)(void *pstats)
 {
     stats_t *stats = pstats;
@@ -233,6 +235,7 @@ void *(*producer_thread)(void *pstats)
 {
     stats_t *stats = pstats;
 }
+#endif
 
 int main(int argc, char *argv[]) {
     int optChar;
@@ -377,12 +380,9 @@ int main(int argc, char *argv[]) {
     }
 
     stats_t stats;
-
-
-
-
-
-
+    void *cargv[2];
+    cargv[0] = &param;
+    consumer((void *)cargv);
     printFinal(stats);
 
     return 0;
