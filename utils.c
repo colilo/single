@@ -3,6 +3,7 @@
 //
 
 #include <stdio.h>
+#include <stdlib.h>
 #include "utils.h"
 
 void output_amqp_bytes(char *name, amqp_bytes_t *need_to_output)
@@ -116,4 +117,71 @@ void output_amqp_status(unsigned int code)
         default:
             printf("code(%d): %d, description: %s\n", code, code, "Unknown");
     }
+}
+
+
+void output_amqp_rpc_status(char *name, amqp_rpc_reply_t rpc_status) {
+    printf("%s.reply.decoded: %#x\n", name, rpc_status.reply.decoded);
+    printf("%s.reply.id: %u\n", name, rpc_status.reply.id);
+    switch (rpc_status.reply_type) {
+        case AMQP_RESPONSE_NONE:
+            output_amqp_status(rpc_status.library_error);
+            break;
+        case AMQP_RESPONSE_NORMAL:
+            break;
+        case AMQP_RESPONSE_LIBRARY_EXCEPTION:
+            printf("%s\n", amqp_error_string2(rpc_status.library_error));
+            break;
+        case AMQP_RESPONSE_SERVER_EXCEPTION:
+            switch (rpc_status.reply.id) {
+                case AMQP_CONNECTION_CLOSE_METHOD: {
+                    amqp_connection_close_t *m = (amqp_connection_close_t *) rpc_status.reply.decoded;
+                    printf("server connection error %d, message: %.*s", m->reply_code, (int) m->reply_text.len,
+                           (char *) m->reply_text.bytes);
+                    break;
+                }
+                case AMQP_CHANNEL_CLOSE_METHOD: {
+                    amqp_channel_close_t *m = (amqp_channel_close_t *) rpc_status.reply.decoded;
+                    printf("server channel error %d, message: %.*s", m->reply_code, (int) m->reply_text.len,
+                           (char *) m->reply_text.bytes);
+                    break;
+                }
+                default: {
+                    printf("unknown server error, method id 0x%08X", rpc_status.reply.id);
+                    break;
+                }
+            }
+            break;
+        default:
+            abort();
+    }
+}
+
+void output_amqp_envelope_info(amqp_envelope_t envelope) {
+    output_amqp_bytes("envelope.consumer_tag", &(envelope.consumer_tag));
+    printf("envelope.channel: %u\n", envelope.channel);
+    printf("envelope.delivery_tag: %lu\n", envelope.delivery_tag);
+    output_amqp_bytes("envelope.exchange", &(envelope.exchange));
+    output_amqp_bytes("envelope.message.body", &(envelope.message.body));
+    envelope.message.pool;
+    printf("envelope.message.properties._flags: %u(%x)\n", envelope.message.properties._flags,
+           envelope.message.properties._flags);
+    output_amqp_bytes("envelope.message.properties.app_id", &(envelope.message.properties.app_id));
+    output_amqp_bytes("envelope.message.properties.cluster_id", &(envelope.message.properties.cluster_id));
+    output_amqp_bytes("envelope.message.properties.content_encoding", &(envelope.message.properties.content_encoding));
+    output_amqp_bytes("envelope.message.properties.content_type", &(envelope.message.properties.content_type));
+    output_amqp_bytes("envelope.message.properties.correlation_id", &(envelope.message.properties.correlation_id));
+    printf("envelope.message.properties.delivery_mode: %c(%x)\n", envelope.message.properties.delivery_mode,
+           envelope.message.properties.delivery_mode);
+    output_amqp_bytes("envelope.message.properties.expiration", &(envelope.message.properties.expiration));
+    printf("envelope.message.properties.headers.num_entries: %d\n", envelope.message.properties.headers.num_entries);
+    printf("envelope.message.properties.headers.entries: %#x\n", envelope.message.properties.headers.entries);
+    output_amqp_bytes("envelope.message.properties.message_id", &(envelope.message.properties.message_id));
+    printf("envelope.message.properties.priority: %u\n", envelope.message.properties.priority);
+    output_amqp_bytes("envelope.message.properties.reply_to", &(envelope.message.properties.reply_to));
+    printf("envelope.message.properties.timestamp: %lu\n", envelope.message.properties.timestamp);
+    output_amqp_bytes("envelope.message.properties.type", &(envelope.message.properties.type));
+    output_amqp_bytes("envelope.message.properties.user_id", &(envelope.message.properties.user_id));
+    printf("envelope.redelivered: %s\n", envelope.redelivered ? "true" : "false");
+    output_amqp_bytes("envelope.routing_key", &(envelope.routing_key));
 }

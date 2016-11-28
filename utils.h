@@ -9,4 +9,5 @@
 
 void output_amqp_bytes(char *name, amqp_bytes_t *need_to_output);
 void output_amqp_status(unsigned int code);
+void output_amqp_rpc_status(char *name, amqp_rpc_reply_t rpc_status);
 #endif //RABBITMQ_TOOL_C_SINGLE_UTILS_H

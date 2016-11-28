@@ -1,20 +1,16 @@
 //
-// Created by chenchaq on 11/24/16.
+// Created by chenchaq on 11/28/16.
 //
 
+#include <stdio.h>
+#include <string.h>
 #include <amqp.h>
 #include <amqp_tcp_socket.h>
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include "utils.h"
 #include "parameter.h"
+#include "utils.h"
 
-/*
- * void *argv[0] = param
- * */
-
-void *(consumer)(void *argv)
+void *(producer)(void *argv)
 {
     void **p = argv;
     parameter_t param = *(parameter_t *)p[0];
@@ -127,7 +123,7 @@ void *(consumer)(void *argv)
         iter++;
     }
     printf("\n");
-    
+
     for (;;) {
         amqp_maybe_release_buffers(conn);
         amqp_envelope_t envelope;
@@ -178,5 +174,3 @@ void *(consumer)(void *argv)
 
     return NULL;
 }
-
-
