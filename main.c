@@ -9,6 +9,7 @@
 #include "parameter.h"
 #include "stats.h"
 #include "consumer.h"
+#include "producer.h"
 
 char *optionHelpInfo[60] = { "show usage", /* ? */
                              "", /* @ */
@@ -72,21 +73,6 @@ char *optionHelpInfo[60] = { "show usage", /* ? */
                              "run duration in seconds(unlimited by default)", /* z */ };
 
 void init_param(parameter_t *ptr);
-
-unsigned long getCurrentMicrosecond()
-{
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (unsigned long)tv.tv_sec * 1000000ul + (unsigned long)tv.tv_usec;
-}
-
-void microsecondSleep(unsigned long microseconds)
-{
-    struct timespec ts;
-    ts.tv_sec = 0;
-    ts.tv_nsec = 1000 * microseconds;
-    nanosleep(&ts, NULL);
-}
 
 void usage() {
 
@@ -335,33 +321,33 @@ int main(int argc, char *argv[]) {
                 }
                 break;
             case 'M':
-                frameMax = atoi(optarg);
+                param._frameMax = atoi(optarg);
                 break;
             case 'b':
-                heartbeat = atoi(optarg);
+                param._heartbeat = atoi(optarg);
                 break;
             case 'p':
                 param._predeclared = true;
                 break;
             case 'h':
                 len = strlen(optarg);
-                curi = malloc( len * sizeof(char) + 1);
-                if (curi == NULL) {
+                param._curi = malloc( len * sizeof(char) + 1);
+                if (param._curi == NULL) {
                     printf("malloc failed\n");
                     return 1;
                 }
-                strncpy(curi, optarg, strlen(optarg));
-                *(curi + len) = '\0';
+                strncpy(param._curi, optarg, strlen(optarg));
+                *(param._curi + len) = '\0';
                 break;
             case 'H':
                 len = strlen(optarg);
-                puri = malloc( len * sizeof(char) + 1);
-                if (puri == NULL) {
+                param._puri = malloc( len * sizeof(char) + 1);
+                if (param._puri == NULL) {
                     printf("malloc failed\n");
                     return 1;
                 }
-                strncpy(puri, optarg, strlen(optarg));
-                *(puri + len) = '\0';
+                strncpy(param._puri, optarg, strlen(optarg));
+                *(param._puri + len) = '\0';
                 break;
             case '?':
                 if (optopt != '?')
@@ -380,10 +366,27 @@ int main(int argc, char *argv[]) {
     }
 
     stats_t stats;
-    void *cargv[2];
-    cargv[0] = &param;
-    consumer((void *)cargv);
-    printFinal(stats);
+    void *targv[2];
+    targv[0] = &param;
+    pthread_t ctid;
+    pthread_t ptid;
+    if (param._consumerCount == 1) {
+        pthread_create(&ctid, NULL, &consumer, targv);
+//        consumer((void *)targv);
+    }
+    if (param._producerCount == 1) {
+        pthread_create(&ptid, NULL, &producer, targv);
+//        producer((void *)targv);
+    }
+
+    if (param._consumerCount == 1) {
+        pthread_join(ctid, NULL);
+//        consumer((void *)targv);
+    }
+    if (param._producerCount == 1) {
+        pthread_join(ptid, NULL);;
+//        producer((void *)targv);
+    }
 
     return 0;
 }
@@ -414,4 +417,6 @@ void init_param(parameter_t *ptr) {
     ptr->_flagPersistent = false;
     ptr->_flagImmediate = false;
     ptr->_predeclared = false;
+    ptr->_frameMax = 0;
+    ptr->_heartbeat = 0;
 }

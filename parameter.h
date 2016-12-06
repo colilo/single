@@ -36,5 +36,10 @@ typedef struct {
     bool _autoAck ;
     bool _autoDelete ;
     bool _predeclared;
+    char *_puri;
+    char *_curi;
+
+    int _frameMax;
+    int _heartbeat;
 } parameter_t;
 #endif //RABBITMQ_TOOL_C_SINGLE_PARAMETER_H

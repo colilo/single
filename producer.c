@@ -7,6 +7,8 @@
 #include <amqp.h>
 #include <amqp_tcp_socket.h>
 #include <stdlib.h>
+#include <pthread.h>
+#include <zconf.h>
 #include "parameter.h"
 #include "utils.h"
 
@@ -18,15 +20,28 @@ void *(producer)(void *argv)
     amqp_socket_t *socket                    = amqp_tcp_socket_new(conn);
     char *hostname = "localhost";
     int port = 5672;
-    int status                               = amqp_socket_open(socket, hostname, port);
+
+
+    struct amqp_connection_info ci;
+
+    amqp_default_connection_info(&ci);
+
+    int ret = amqp_parse_url(param._puri, &ci);
+    if (ret == AMQP_STATUS_BAD_URL) {
+        printf("producer bad URL\n");
+        return NULL;
+    }
+
+
+    int status                               = amqp_socket_open(socket, ci.host, ci.port);
     char *vhost = "/";
     int channel_max = 10;
     int frame_max = 131072;
     int heartbeat = 0;
     amqp_sasl_method_enum sasl_method = AMQP_SASL_METHOD_PLAIN;
     char *username = "guest";
-    char *passwork = "guest";
-    amqp_rpc_reply_t login_rpc_status            = amqp_login(conn, vhost, channel_max, frame_max, heartbeat, sasl_method, username, passwork);
+    char *password = "guest";
+    amqp_rpc_reply_t login_rpc_status            = amqp_login(conn, vhost, channel_max, frame_max, heartbeat, sasl_method, username, password);
     amqp_channel_t channel = 1;
     amqp_channel_open_ok_t *chopen_status        = amqp_channel_open(conn, channel);
     if (chopen_status == NULL) {
@@ -35,6 +50,8 @@ void *(producer)(void *argv)
         output_amqp_rpc_status("channel open", rpc_status);
         return NULL;
     }
+
+    amqp_basic_properties_t props = {0};
 
     int i = 0;
     printf("channel id len: %d, channel bytes(hex byte): \n", chopen_status->channel_id.len);
@@ -90,7 +107,7 @@ void *(producer)(void *argv)
         iter++;
     }
     printf("\n");
-    printf("consumer_count: %u, message_count: %u\n", qdeclare_status->consumer_count, qdeclare_status->message_count);
+    printf("producer_count: %u, message_count: %u\n", qdeclare_status->consumer_count, qdeclare_status->message_count);
 
     amqp_bytes_t exchange_bytes = amqp_cstring_bytes(param._exchangeName);
     amqp_bytes_t routing_key_bytes = amqp_cstring_bytes(param._routingKey);
@@ -102,70 +119,74 @@ void *(producer)(void *argv)
 
     printf("queue bind result: demmy mean nothing: %c(%x)\n", qbind_status->dummy, qbind_status->dummy);
 
-    amqp_bytes_t consumer_tag;
-    consumer_tag.len = amqp_empty_bytes.len;
-    consumer_tag.bytes = amqp_empty_bytes.bytes;
+    amqp_bytes_t producer_tag;
+    producer_tag.len = amqp_empty_bytes.len;
+    producer_tag.bytes = amqp_empty_bytes.bytes;
     amqp_boolean_t no_local = 0;
     amqp_boolean_t no_ack = 1;
-    amqp_basic_consume_ok_t *consume_status  = amqp_basic_consume(conn, channel, queue_bytes, consumer_tag, no_local, no_ack, exclusive, arguments);
-    if (consume_status == NULL) {
-        printf("basic consume failed\n");
-        return NULL;
+
+
+    size_t min_msg_size = param._minMsgSize;
+    unsigned char *message = malloc(min_msg_size * sizeof(char));
+
+    for (i = 0; i < min_msg_size; i++) {
+        message[i] = i & 0xff;
     }
 
-    printf("consumer tag len: %u, consumer tag bytes: \n", consume_status->consumer_tag.len);
-    iter = consume_status->consumer_tag.bytes;
-    for (i = 1; i <= consume_status->consumer_tag.len; i++) {
-        printf("%c(%x)", *iter, *iter);
-        if (i & 7 == 0) {
-            printf("\n");
+    amqp_bytes_t message_bytes;
+    message_bytes.len = min_msg_size;
+    message_bytes.bytes = message;
+
+
+
+
+
+    unsigned long now;
+    unsigned long startTime;
+    startTime = now = getCurrentMicrosecond();
+    unsigned long lastStatsTime = startTime;
+    unsigned long msgCount = 0;
+    int totalMsgCount = 0;
+    while ((param._timeLimit == 0 || now < startTime + param._timeLimit * 1000000ul) && (param._producerMsgCount == 0 || msgCount < param._producerMsgCount)) {
+
+        unsigned long elapsed = now - lastStatsTime;
+        lastStatsTime = now;
+
+        unsigned long pause = param._producerRateLimit == 0.0f ? 0.0f : (msgCount * 1000000.0 / param._producerRateLimit - elapsed);
+        if (pause > 0) {
+            microsecondSleep(pause);
         }
-        iter++;
+        msgCount = 0;
+               
+        unsigned long timestamp = getCurrentMicrosecond();
+        message[0] = (unsigned char)(totalMsgCount >> 24 & 0xff);
+        message[1] = (unsigned char)(totalMsgCount >> 16 & 0xff);
+        message[2] = (unsigned char)(totalMsgCount >> 8  & 0xff);
+        message[3] = (unsigned char)(totalMsgCount       & 0xff);
+        message[4] =  (unsigned char)(timestamp >> 56 & 0xff);
+        message[5] =  (unsigned char)(timestamp >> 48 & 0xff);
+        message[6] =  (unsigned char)(timestamp >> 40 & 0xff);
+        message[7] =  (unsigned char)(timestamp >> 32 & 0xff);
+        message[8] =  (unsigned char)(timestamp >> 24 & 0xff);
+        message[9] =  (unsigned char)(timestamp >> 16 & 0xff);
+        message[10] = (unsigned char)(timestamp >> 8  & 0xff);
+        message[11] = (unsigned char)(timestamp       & 0xff);
+
+
+
+        int ret = amqp_basic_publish(conn, channel, exchange_bytes, routing_key_bytes, 0, 0, NULL, message_bytes);
+//        output_amqp_status(ret);
+
+        msgCount++;
+        totalMsgCount++;
+        now = getCurrentMicrosecond();
     }
-    printf("\n");
 
-    for (;;) {
-        amqp_maybe_release_buffers(conn);
-        amqp_envelope_t envelope;
-        struct timeval *timeout = NULL;
-        int flags = 0;
-        amqp_rpc_reply_t consumemsg_rpc_status = amqp_consume_message(conn, &envelope, timeout, flags);
-        output_amqp_rpc_status("amqp_consume_message", consumemsg_rpc_status);
+    unsigned long endTime = getCurrentMicrosecond();
+    printf("msg count: %d, all time: %lu\n", totalMsgCount, (endTime - startTime) );
+    printf("msg count: %d, avg rate: %fmsg/s\n", totalMsgCount, totalMsgCount * 1000000.0 / (endTime - startTime) );
 
-        switch (consumemsg_rpc_status.reply_type) {
-            case AMQP_RESPONSE_NONE:
-                break;
-            case AMQP_RESPONSE_NORMAL: {
-                amqp_bytes_t *message = &(envelope.message.body);
-                unsigned char integer[4] = {0};
-                integer[3] = *((unsigned char *) message->bytes);
-                integer[2] = *((unsigned char *) message->bytes + 1);
-                integer[1] = *((unsigned char *) message->bytes + 2);
-                integer[0] = *((unsigned char *) message->bytes + 3);
-                int seq = *(int *) (integer);
-
-                unsigned char integer64[8] = {0};
-                integer64[7] = *((unsigned char *) message->bytes + 4);
-                integer64[6] = *((unsigned char *) message->bytes + 4 + 1);
-                integer64[5] = *((unsigned char *) message->bytes + 4 + 2);
-                integer64[4] = *((unsigned char *) message->bytes + 4 + 3);
-                integer64[3] = *((unsigned char *) message->bytes + 4 + 4);
-                integer64[2] = *((unsigned char *) message->bytes + 4 + 5);
-                integer64[1] = *((unsigned char *) message->bytes + 4 + 6);
-                integer64[0] = *((unsigned char *) message->bytes + 4 + 7);
-                unsigned long time = *((unsigned long *) (integer64));
-                printf("seq: %d, time: %lu\n", seq, time);
-                amqp_destroy_envelope(&envelope);
-                break;
-            }
-            case AMQP_RESPONSE_LIBRARY_EXCEPTION:
-                break;
-            case AMQP_RESPONSE_SERVER_EXCEPTION:
-                break;
-            default:
-                abort();
-        }
-    }
+//    sleep(5);
 
     int code = AMQP_REPLY_SUCCESS;
     amqp_rpc_reply_t chclose_rpc_status = amqp_channel_close(conn, channel, code);

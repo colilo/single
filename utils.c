@@ -4,7 +4,26 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/time.h>
+#include <time.h>
 #include "utils.h"
+
+
+unsigned long getCurrentMicrosecond()
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (unsigned long)tv.tv_sec * 1000000ul + (unsigned long)tv.tv_usec;
+}
+
+void microsecondSleep(unsigned long microseconds)
+{
+    struct timespec ts;
+    ts.tv_sec = 0;
+    ts.tv_nsec = 1000 * microseconds;
+    nanosleep(&ts, NULL);
+}
+
 
 void output_amqp_bytes(char *name, amqp_bytes_t *need_to_output)
 {
@@ -25,7 +44,7 @@ void output_amqp_status(unsigned int code)
 {
     switch(code) {
         case AMQP_STATUS_OK:
-            printf("code(%d): %d, description: %s\n", code, 0x0, "Operation successful");
+//            printf("code(%d): %d, description: %s\n", code, 0x0, "Operation successful");
             break;
         case AMQP_STATUS_NO_MEMORY:
             printf("code(%d): %d, description: %s\n", code, -0x0001,  "Memory allocation failed");
